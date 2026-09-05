@@ -51,7 +51,7 @@ def cmd_eval(args) -> int:
     with BananaEnv(exe_path=args.env_path, worker_id=args.worker_id,
                    no_graphics=not args.graphics, seed=args.seed) as env:
         stats = evaluate(env, agent, episodes=args.episodes,
-                         train_mode=not args.graphics)
+                         train_mode=not args.graphics, eps=args.eps)
 
     summary = {k: v for k, v in stats.items() if k != "scores"}
     print(json.dumps(summary, indent=2))
@@ -204,6 +204,8 @@ def main(argv=None) -> int:
     common(e)
     e.add_argument("--checkpoint", required=True)
     e.add_argument("--episodes", type=int, default=100)
+    e.add_argument("--eps", type=float, default=0.0,
+                   help="evaluation epsilon; 0 = fully greedy, 0.05 = DQN paper protocol")
     e.add_argument("--out", default=None)
     e.set_defaults(func=cmd_eval)
 

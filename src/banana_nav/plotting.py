@@ -19,6 +19,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 import numpy as np
 
 # --- validated tokens (see dataviz reference palette) ---
@@ -183,8 +184,11 @@ def plot_ablation_curves(runs: dict[str, list[dict]], out_path: Path,
         solved = [r["solved_episode"] for r in runs[variant] if r.get("solved_episode")]
         note = (f"solved {len(solved)}/{n_seeds} seeds"
                 + (f", median {int(np.median(solved))} ep" if solved else ""))
+        # Halo: fast variants plateau high enough that the curve runs through
+        # this note in the top-left of the facet.
         ax.text(0.03, 0.94, note, transform=ax.transAxes, ha="left", va="top",
-                color=INK_2, fontsize=8.5)
+                color=INK_2, fontsize=8.5, zorder=6,
+                path_effects=[pe.withStroke(linewidth=3.0, foreground=SURFACE)])
         ax.grid(axis="x", visible=False)
 
     for j in range(len(order), nrow * ncol):
@@ -239,13 +243,16 @@ def plot_episodes_to_solve(runs: dict[str, list[dict]], out_path: Path,
             # Per-seed dots: the spread is the whole point of running 5 seeds.
             ax.scatter(pts, np.full(len(pts), i), s=30, color=INK, alpha=0.5,
                        zorder=5, edgecolors=SURFACE, linewidths=1.1)
-        # One label per row, placed clear of both the bar end and every dot.
+        # Anchor the value to the bar it describes, not to the far right of the
+        # row: pushing it past an outlier dot makes it read as that dot's label.
+        # A surface-coloured halo keeps it legible where a dot sits underneath.
         if m > 0:
             note = f"{int(m)}"
             if unsolved[i]:
                 note += f"   {unsolved[i]}/{len(runs[v])} never solved"
-            ax.text(reach[i] + pad, i, note, va="center", ha="left",
-                    color=INK, fontsize=9.5, fontweight="bold")
+            ax.text(m + pad, i, note, va="center", ha="left",
+                    color=INK, fontsize=9.5, fontweight="bold", zorder=6,
+                    path_effects=[pe.withStroke(linewidth=3.5, foreground=SURFACE)])
         elif unsolved[i]:
             ax.text(pad, i, f"never solved in {len(runs[v])} seeds", va="center",
                     ha="left", color=MUTED, fontsize=9)

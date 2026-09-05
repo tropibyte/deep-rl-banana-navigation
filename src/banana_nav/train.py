@@ -173,31 +173,46 @@ def train(
             csv_file.close()
 
     result.wall_seconds = time.time() - t0
-    # Always persist final weights: for a run that never solves, this is still
-    # the artifact you want to inspect.
-    if checkpoint_path and result.solved_episode is None:
-        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-        agent.save(checkpoint_path)
+    if checkpoint_path:
+        ckpt = Path(checkpoint_path)
+        ckpt.parent.mkdir(parents=True, exist_ok=True)
+        # Two artifacts, because they answer different questions:
+        #   <tag>.pth        weights at the moment the run first solved -- the
+        #                    checkpoint the reported solve episode refers to
+        #   <tag>_final.pth  weights after the full budget, which keep improving
+        #                    well past the +13 threshold and are the ones worth
+        #                    evaluating or filming
+        if result.solved_episode is None:
+            agent.save(ckpt)
+        agent.save(ckpt.with_name(ckpt.stem + "_final" + ckpt.suffix))
     return result
 
 
 def evaluate(env: BananaEnv, agent: DQNAgent, episodes: int = 100,
-             train_mode: bool = True, verbose: bool = True) -> dict:
-    """Greedy evaluation of a trained agent (no exploration at all)."""
+             train_mode: bool = True, verbose: bool = True,
+             eps: float = 0.0) -> dict:
+    """Evaluate a trained agent.
+
+    ``eps=0`` is the fully greedy policy. A small non-zero epsilon follows the
+    original DQN evaluation protocol (Mnih et al. use 0.05), which keeps a
+    deterministic policy from getting stuck repeating an action in states where
+    the argmax is degenerate.
+    """
     scores = []
     for ep in range(1, episodes + 1):
         state = env.reset(train_mode=train_mode)
         score = 0.0
         done = False
         while not done:
-            action = agent.act(state, greedy=True)
+            action = agent.act(state, greedy=True) if eps <= 0 else agent.act(state, eps=eps)
             state, reward, done, _ = env.step(action)
             score += reward
         scores.append(score)
         if verbose and ep % 20 == 0:
             print(f"  eval ep {ep:3d}  mean so far {np.mean(scores):.2f}", flush=True)
     arr = np.array(scores)
-    return {"episodes": episodes, "mean": float(arr.mean()), "std": float(arr.std()),
+    return {"episodes": episodes, "eval_eps": eps,
+            "mean": float(arr.mean()), "std": float(arr.std()),
             "min": float(arr.min()), "max": float(arr.max()),
             "median": float(np.median(arr)), "scores": scores}
 

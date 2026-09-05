@@ -13,6 +13,12 @@ The repository is built around a **controlled ablation**: every component is an
 independent switch, each variant is trained across 5 random seeds, and results
 are reported as medians with interquartile bands rather than a single lucky run.
 
+**Result: the environment was solved in 67 episodes** by the best run, against a
+project benchmark of 1800. All 35 runs across all 7 variants solved it. The
+ablation also produced two negative findings worth more than the headline —
+prioritized replay *hurt* by 35% at un-retuned hyperparameters, and a fully
+greedy evaluation policy is degenerate on this task. See [Report.md](Report.md).
+
 ![Trained agent](assets/trained_agent.gif)
 
 ![Learning curve](assets/learning_curve.png)
@@ -155,6 +161,16 @@ See **[Report.md](Report.md)** for the learning algorithm, hyperparameters,
 network architectures, the full ablation, and ideas for future work.
 
 <!--RESULTS-SUMMARY-->
+| Variant | Seeds | Solved | Median episodes | Mean +/- SD | Best 100-ep avg |
+|---|---|---|---|---|---|
+| Vanilla DQN (baseline) | 5 | 5/5 | **410** | 399 +/- 18 | 16.69 |
+| + Double DQN | 5 | 5/5 | **392** | 396 +/- 20 | 16.48 |
+| + Dueling head | 5 | 5/5 | **409** | 432 +/- 35 | 16.08 |
+| + Prioritized replay | 5 | 5/5 | **555** | 569 +/- 51 | 16.06 |
+| + 3-step returns | 5 | 5/5 | **407** | 395 +/- 22 | 16.96 |
+| + NoisyNet | 5 | 5/5 | **189** | 228 +/- 70 | 17.90 |
+| All combined | 5 | 5/5 | **134** | 203 +/- 176 | 16.65 |
+<!--/RESULTS-SUMMARY-->
 
 ---
 

@@ -169,6 +169,10 @@ components rather than to tuning.
 ## 5. Results
 
 <!--HEADLINE-RESULT-->
+**The environment was solved.** The best single run (All combined, seed 4) reached a 100-episode average of +13 in **67 episodes** — against the project benchmark of 1800.
+
+Across seeds, the fastest variant was **All combined** at a median of **134 episodes** (5/5 seeds solved), versus **410 episodes** for the vanilla DQN baseline.
+<!--/HEADLINE-RESULT-->
 
 ### 5.1 Learning curve
 
@@ -186,8 +190,96 @@ interquartile bands.
 ![Episodes to solve](assets/episodes_to_solve.png)
 
 <!--ABLATION-TABLE-->
+| Variant | Seeds solved | Median episodes to solve | Mean ± SD | Final 100-ep avg | vs baseline |
+|---|---|---|---|---|---|
+| Vanilla DQN (baseline) | 5/5 | **410** | 399 ± 18 | 15.46 | baseline |
+| + Double DQN | 5/5 | **392** | 396 ± 20 | 15.92 | -18 ep (-4%) |
+| + Dueling head | 5/5 | **409** | 432 ± 35 | 15.36 | -1 ep (-0%) |
+| + Prioritized replay | 5/5 | **555** | 569 ± 51 | 14.79 | +145 ep (+35%) |
+| + 3-step returns | 5/5 | **407** | 395 ± 22 | 16.09 | -3 ep (-1%) |
+| + NoisyNet | 5/5 | **189** | 228 ± 70 | 16.60 | -221 ep (-54%) |
+| All combined | 5/5 | **134** | 203 ± 176 | 15.36 | -276 ep (-67%) |
+<!--/ABLATION-TABLE-->
 
 <!--ABLATION-DISCUSSION-->
+#### What actually mattered
+
+**Every one of the 35 runs solved the environment**, so the comparison is about
+*speed*, not success. Three findings stand out, and two of them are negative.
+
+**Exploration dominated everything else.** NoisyNet alone cut the median
+time-to-solve from 410 to 189 episodes — a 54% reduction, larger than every
+other component combined. The honest reading is that this says as much about
+the **baseline's epsilon schedule** as about NoisyNet. With `eps_decay = 0.995`,
+epsilon is still 0.25 at episode 275 and 0.10 at episode 460 — so the
+epsilon-greedy variants are still throwing away 10–25% of their actions on
+uniform random moves at exactly the point where their policy is good enough to
+clear +13. NoisyNet does not pay that tax: its exploration is learned and
+state-conditioned, so it can collapse toward greedy behaviour where the agent is
+already confident. A faster epsilon decay would very likely close much of this
+gap, which is the single most promising cheap experiment left on the table.
+
+**Prioritized replay made things consistently worse** — 555 episodes versus 410
+for the baseline, a 35% *regression*, and not a seed artifact: PER's five seeds
+(503, 549, 555, 583, 657) do not overlap the baseline's (370, 388, 410, 412,
+417) at all. This is a real result, and it is not evidence that PER is a bad
+idea. Prioritization deliberately over-samples high-TD-error transitions, which
+raises both the magnitude and the variance of the gradient signal; Schaul et al.
+compensate by cutting the learning rate to a quarter of the DQN value. Holding
+every hyperparameter fixed across variants is what makes this ablation clean,
+but it also means PER here runs at an effectively-too-high learning rate. The
+correct conclusion is narrow: **PER does not pay for itself at un-retuned
+hyperparameters on this task.**
+
+**Double DQN, the dueling head and 3-step returns were all essentially neutral**
+(392, 409 and 407 versus 410). That is unsurprising on reflection. Double DQN
+addresses overestimation bias from the `max` operator, but with only four
+actions and a dense, immediate reward there is little bias to correct. N-step
+returns speed up reward propagation, which matters most when reward is sparse or
+delayed — here a banana is collected and paid for in the same instant. The
+dueling head helps when many actions share a state's value, which is true in
+this arena but evidently not the binding constraint.
+
+**The combination still beat its best part.** Rainbow reached a median of 134
+episodes against NoisyNet's 189, so the near-neutral components do contribute
+something once exploration stops being the bottleneck — even though almost none
+of them justified their complexity alone.
+
+#### Why five seeds were necessary
+
+Seed variance on this task is large enough to invert conclusions. Rainbow's five
+runs solved in 67, 124, 134, 140 and **552** episodes: the worst seed took eight
+times longer than the best. Had this study reported one run, it could honestly
+have claimed anything from "solved in 67 episodes" to "barely beat the
+baseline."
+
+There is also a pattern worth flagging rather than smoothing over: **both
+variants that use NoisyNet had their worst run on seed 0** (noisy: 366 against
+181–217; rainbow: 552 against 67–140). Two variants is far too small a sample to
+call this anything but suggestive, but it hints at a seed-specific interaction
+with the noisy layers' initialisation rather than ordinary run-to-run noise.
+Confirming or dismissing it would need considerably more seeds.
+
+#### The greedy policy is degenerate
+
+An unexpected result surfaced during evaluation. Taking a checkpoint and running
+it **fully greedily** scores far below what the same weights achieved during
+training:
+
+| Checkpoint | Greedy (ε=0) | ε=0.05 |
+|---|---|---|
+| `dqn_seed3` | 7.22 | **12.68** |
+
+Five percent random actions is worth more than five points of score. Only 6% of
+greedy episodes score zero outright, so this is not simply the agent freezing —
+it is a deterministic policy burning large numbers of steps in short action
+loops (turn left, turn right, repeat) in states where the argmax is effectively
+degenerate. Any random action breaks the cycle.
+
+This is a known enough hazard that the original DQN paper evaluates at ε=0.05
+rather than ε=0, and these results are a clean reproduction of why. Both numbers
+are reported here rather than only the flattering one.
+<!--/ABLATION-DISCUSSION-->
 
 ### 5.3 Greedy evaluation
 
@@ -197,37 +289,60 @@ interquartile bands.
 
 ## 6. Ideas for future work
 
+Ordered by expected value, and grounded in what the ablation actually showed
+rather than a generic list of extensions.
+
+**Decay epsilon faster — the cheapest win available.** NoisyNet's 54% reduction
+in time-to-solve is, on the evidence above, largely a story about the baseline's
+exploration schedule rather than about noisy layers specifically. At
+`eps_decay = 0.995` the agent is still taking 10% random actions at episode 460,
+long after its policy is good enough to clear +13. Sweeping the decay rate
+(0.98, 0.99, 0.995) would separate "NoisyNet is better" from "the epsilon
+schedule was badly tuned", and would probably improve four of the seven variants
+at zero implementation cost. This is the first experiment to run.
+
+**Re-tune the learning rate for prioritized replay.** PER regressed by 35% here
+with every hyperparameter held fixed for comparability. Schaul et al. reduce the
+learning rate to a quarter of the DQN value when adding prioritization, for
+exactly the reason visible in these results: over-sampling high-error
+transitions inflates gradient magnitude and variance. Re-running the `per` and
+`rainbow` configs at `lr = 1.25e-4` would test whether PER's regression is
+intrinsic or purely a tuning artifact. Given that PER is the one component that
+actively hurt, this is the most interesting open question in the study.
+
 **Distributional RL (C51 / QR-DQN).** The one Rainbow component not implemented
 here. Instead of regressing the *expected* return, learn a distribution over
-returns. In Hessel et al.'s own ablation this was among the largest single
-contributors, and it is the obvious next addition.
+returns. In Hessel et al.'s own ablation it was among the largest single
+contributors, and none of the components measured here — except exploration —
+moved the needle much, which makes the missing one more interesting rather than
+less.
 
-**Proper hyperparameter search.** Every variant deliberately shares one
-hyperparameter set so the ablation isolates architecture from tuning. That is
-the right call for a *comparison*, but it certainly understates the best
-achievable result — prioritized replay in particular is known to prefer a lower
-learning rate, since it already amplifies high-error transitions.
+**Investigate the degenerate greedy policy.** Fully greedy evaluation scores
+7.22 where the same weights score 12.68 at ε=0.05. Diagnosing *which* states
+produce the action loops — and whether a tie-breaking rule, an action-repeat
+penalty, or simply a longer-trained network removes them — would be more
+valuable than another value-function refinement, because it affects how every
+trained agent here is deployed.
 
-**Tune the ε schedule against episode budget.** `0.995` decay reaches ε=0.01
-around episode 900, which means a meaningful fraction of a 500-episode solve is
-still spent exploring. A faster decay would likely improve every epsilon-greedy
-variant; that it was left alone is precisely why the NoisyNet comparison is
-interesting.
+**More seeds, and proper interval estimates.** Five seeds supports medians and
+interquartile ranges but not significance claims about the near-ties (Double
+DQN's 392 against the baseline's 410 is well inside seed noise, and should not
+be read as an improvement). Rliable-style bootstrapped confidence intervals over
+10–20 seeds would let those calls be made rather than merely displayed. The
+apparent seed-0 interaction with NoisyNet also needs more seeds to confirm or
+dismiss.
 
 **Learning from pixels.** The 84×84×3 first-person build turns this into a
-representation-learning problem needing a CNN and frame stacking. Realistically
-requires a GPU — a rough extrapolation from the CPU throughput measured here
-puts it in the multi-day range on this hardware.
+representation-learning problem requiring a CNN and frame stacking. Extrapolating
+from the ~190 steps/s measured on this hardware, a comparable study would run
+into the multi-day range on CPU; this one needs a GPU.
 
-**Better exploration than either mechanism here.** The reward signal is dense,
-so epsilon-greedy is adequate. Under sparse reward, count-based or curiosity-driven
-exploration would matter far more than any of the value-function refinements
-measured above.
-
-**Sharper statistics.** Five seeds supports medians and interquartile ranges but
-not strong significance claims about closely-ranked components. Rliable-style
-bootstrapped confidence intervals over more seeds would let the near-ties be
-called properly rather than merely displayed.
+**Better exploration under sparse reward.** The reward here is dense — a banana
+is collected and paid for in the same instant — which is precisely why
+exploration strategy dominated and why the credit-assignment components
+(n-step, Double DQN) did not. Under sparse reward that ranking would likely
+invert, and count-based or curiosity-driven exploration would matter far more
+than any of the value-function refinements measured here.
 
 ---
 
