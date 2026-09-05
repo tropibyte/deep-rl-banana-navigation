@@ -1,0 +1,25 @@
+# Baseline + proportional prioritized replay (Schaul et al. 2016).
+name: per
+agent:
+  double: false
+  dueling: false
+  prioritized: true
+  noisy: false
+  n_step: 1
+  per_alpha: 0.6
+  per_beta_start: 0.4
+  per_beta_frames: 100000
+  hidden: [128, 64]
+  buffer_size: 100000
+  batch_size: 64
+  gamma: 0.99
+  lr: 0.0005
+  tau: 0.001
+  update_every: 4
+  learn_starts: 1000
+train:
+  n_episodes: 2000
+  eps_start: 1.0
+  eps_end: 0.01
+  eps_decay: 0.995
+  print_every: 50

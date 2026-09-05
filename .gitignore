@@ -1,0 +1,23 @@
+# Unity environment binaries -- download separately, see README
+Banana_Windows_x86_64/
+Banana_Linux/
+Banana.app/
+VisualBanana*/
+*.zip
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+
+# Run artifacts (checkpoints + headline results are committed selectively)
+results/**/raw/
+*.log
+unity-environment.log
+
+# per-run scratch working directories (Unity log isolation)
+results/**/_rundirs/
