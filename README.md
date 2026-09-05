@@ -15,9 +15,10 @@ are reported as medians with interquartile bands rather than a single lucky run.
 
 **Result: the environment was solved in 67 episodes** by the best run, against a
 project benchmark of 1800. All 35 runs across all 7 variants solved it. The
-ablation also produced two negative findings worth more than the headline —
-prioritized replay *hurt* by 35% at un-retuned hyperparameters, and a fully
-greedy evaluation policy is degenerate on this task. See [Report.md](Report.md).
+ablation also produced findings worth more than the headline — prioritized
+replay *hurt* by 35% at un-retuned hyperparameters, three of the six components
+were statistically indistinguishable from the baseline, and almost all of the
+gain came from exploration. See [Report.md](Report.md).
 
 ![Trained agent](assets/trained_agent.gif)
 

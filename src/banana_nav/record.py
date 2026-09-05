@@ -52,33 +52,48 @@ def _find_unity_window(timeout: float = 25.0):
         EnumWindows(EnumWindowsProc(cb), 0)
         if found:
             hwnd = found[0]
-            # Screen capture records whatever is on screen, including anything
-            # drawn OVER the Unity window -- notification toasts in particular,
-            # which can carry personal content into a published GIF. Pin the
-            # window topmost and park it at the top-left, away from the
-            # bottom/right edges where Windows renders toasts.
-            # SWP_NOSIZE matters: the Unity player owns its resolution and
-            # re-centres itself if you try to resize it, undoing the move. Only
-            # the position is changed here.
-            HWND_TOPMOST, SWP_NOSIZE, SWP_SHOWWINDOW = -1, 0x0001, 0x0040
+            # Bring it to the front, but never resize or maximise it: the Unity
+            # player owns its own resolution, and both resizing it and
+            # maximising it provoke a D3D device reset that can block.
+            HWND_TOPMOST, SWP_NOSIZE, SWP_NOMOVE = -1, 0x0001, 0x0002
             user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                                SWP_NOSIZE | SWP_SHOWWINDOW)
+                                SWP_NOSIZE | SWP_NOMOVE)
             user32.SetForegroundWindow(hwnd)
-            time.sleep(0.8)
+
+            # Wait for the client size to STOP changing before trusting it.
+            # The player resizes itself asynchronously after launch, and a
+            # rectangle measured mid-transition can be far larger than the
+            # window really occupies -- which is how desktop content behind the
+            # window ends up inside the recording.
+            prev, stable = None, 0
+            for _ in range(30):
+                time.sleep(0.25)
+                r = wintypes.RECT()
+                user32.GetClientRect(hwnd, ctypes.byref(r))
+                cur = (r.right, r.bottom)
+                stable = stable + 1 if (cur == prev and cur[0] > 0) else 0
+                prev = cur
+                if stable >= 3:
+                    break
+
             rect = wintypes.RECT()
             user32.GetClientRect(hwnd, ctypes.byref(rect))
+            wr = wintypes.RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(wr))
             pt = wintypes.POINT(0, 0)
             user32.ClientToScreen(hwnd, ctypes.byref(pt))
-            right, bottom = pt.x + rect.right, pt.y + rect.bottom
+
+            # Belt and braces: the client area can never be larger than the
+            # window that contains it. If the two disagree, trust the smaller.
+            w = min(rect.right, wr.right - wr.left)
+            h = min(rect.bottom, wr.bottom - wr.top)
+            right, bottom = pt.x + w, pt.y + h
 
             # Windows anchors notification toasts to the RIGHT EDGE OF THE
-            # SCREEN and draws them above every other window, so anything
-            # occupying that strip lands in the capture -- including whatever
-            # personal content the toast happens to be showing. Repositioning
-            # the window does not help (the Unity player re-centres itself), so
-            # the capture is clipped to stay clear of the toast zone instead.
-            screen_w = user32.GetSystemMetrics(0)
-            right = min(right, screen_w - TOAST_ZONE_PX)
+            # SCREEN and draws them above every other window, so anything in
+            # that strip lands in the capture -- including whatever personal
+            # content a toast happens to be showing.
+            right = min(right, user32.GetSystemMetrics(0) - TOAST_ZONE_PX)
 
             box = (pt.x, pt.y, right, bottom)
             if box[2] > box[0] and box[3] > box[1]:
@@ -89,7 +104,7 @@ def _find_unity_window(timeout: float = 25.0):
 
 def record_gif(checkpoint: str, out_path: str, episodes: int = 1, fps: int = 30,
                env_path: str | None = None, max_frames: int = 600,
-               scale: float = 0.5, every: int = 2) -> Path:
+               scale: float = 0.5, every: int = 2, crop_top: float = 0.0) -> Path:
     """Play greedily with graphics on, capturing the Unity window to a GIF."""
     import imageio.v2 as imageio
     from PIL import Image, ImageGrab
@@ -105,7 +120,14 @@ def record_gif(checkpoint: str, out_path: str, episodes: int = 1, fps: int = 30,
     scores: list[float] = []
 
     # graphics ON: there is nothing to film otherwise.
-    with BananaEnv(exe_path=env_path, no_graphics=False, seed=0, train_mode=False) as env:
+    #
+    # train_mode=True even though nothing is being trained. The Banana build's
+    # *inference* configuration steps at ~0.5 steps/s on this machine versus
+    # ~21 steps/s for the training configuration (both measured with graphics
+    # enabled), so filming a single 300-step episode in inference mode takes
+    # over ten minutes. The rendered frames are identical either way -- only
+    # the wall-clock pacing differs, and playback fps is set here anyway.
+    with BananaEnv(exe_path=env_path, no_graphics=False, seed=0, train_mode=True) as env:
         win = _find_unity_window()
         if win is None:
             print("WARNING: could not locate the Unity window; grabbing the full screen.")
@@ -113,7 +135,7 @@ def record_gif(checkpoint: str, out_path: str, episodes: int = 1, fps: int = 30,
         print(f"capturing region {box}" if box else "capturing full screen")
 
         for ep in range(episodes):
-            state = env.reset(train_mode=False)
+            state = env.reset(train_mode=True)
             score, done, i = 0.0, False, 0
             while not done and len(frames) < max_frames:
                 action = agent.act(state, greedy=True)
@@ -121,6 +143,11 @@ def record_gif(checkpoint: str, out_path: str, episodes: int = 1, fps: int = 30,
                 score += reward
                 if i % every == 0:
                     img = ImageGrab.grab(bbox=box, all_screens=True)
+                    if crop_top > 0:
+                        # The upper part of the frame is empty ceiling; cropping
+                        # it puts the floor (where the bananas are) in frame.
+                        img = img.crop((0, int(img.height * crop_top),
+                                        img.width, img.height))
                     if scale != 1.0:
                         img = img.resize((int(img.width * scale), int(img.height * scale)),
                                          Image.LANCZOS)

@@ -289,30 +289,66 @@ versus 100%) despite a far better median, because its seed-0 outlier loses to
 every baseline run. Rainbow is **faster**; NoisyNet alone is **more reliable**.
 Those are different claims, and only the multi-seed design separates them.
 
-#### The greedy policy is degenerate
+#### Greedy evaluation, and why the checkpoint matters
 
-An unexpected result surfaced during evaluation. Taking a checkpoint and running
-it **fully greedily** scores far below what the same weights achieved during
-training:
+An unexpected result surfaced during evaluation, and chasing it down changed the
+conclusion.
 
-| Checkpoint | Greedy (ε=0) | ε=0.05 |
-|---|---|---|
-| `dqn_seed3` | 7.22 | **12.68** |
+Taking a checkpoint saved **at the moment a run first solved** and replaying it
+*fully greedily* scores far below what the same weights achieved during
+training. Adding just 5% random actions recovers most of the gap:
 
-Five percent random actions is worth more than five points of score. Only 6% of
-greedy episodes score zero outright, so this is not simply the agent freezing —
-it is a deterministic policy burning large numbers of steps in short action
-loops (turn left, turn right, repeat) in states where the argmax is effectively
-degenerate. Any random action breaks the cycle.
+| Checkpoint | Training avg at save | Greedy (ε=0) | ε=0.05 |
+|---|---|---|---|
+| `dqn_seed3` — at first solve (ep 470) | 13.0 | 7.22 | 12.68 |
+| `rainbow_seed4` — at first solve (ep 167) | 13.0 | 8.58 | 12.86 |
+| `rainbow_showcase_final` — after 900 ep | 15.8 | **15.50** | **16.65** |
 
-This is a known enough hazard that the original DQN paper evaluates at ε=0.05
-rather than ε=0, and these results are a clean reproduction of why. Both numbers
-are reported here rather than only the flattering one.
+The obvious reading of the first two rows is that greedy action selection is
+simply broken on this task. The third row says otherwise. Evaluated at the end
+of the full budget, the *same configuration and seed* is perfectly healthy
+greedily — 15.50, comfortably clear of +13 — and the epsilon bonus shrinks from
+about +4.3 to +1.15.
+
+So the effect is a property of **an undertrained policy**, not of the
+environment. At the instant a run crosses +13 its argmax is still near-degenerate
+in many states, and a deterministic policy burns long stretches of the episode
+in short action loops — turn left, turn right, repeat — which any random action
+breaks. Only 6% of greedy episodes score zero outright, so this is wasted time
+rather than total paralysis. Another 700 episodes of training sharpens the
+action-value gaps enough that the loops stop forming.
+
+Two practical consequences, both applied here:
+
+* **Save more than one checkpoint.** A checkpoint written at the solve threshold
+  is the right artifact for the *reported solve episode*, but it is not the
+  agent you want to deploy or film. `train()` now writes both `<tag>.pth` (at
+  first solve) and `<tag>_final.pth` (after the full budget).
+* **Report the evaluation protocol.** Mnih et al. evaluate at ε=0.05 rather than
+  ε=0 for exactly this class of reason. Both numbers are given above rather than
+  only the flattering one — and for the fully-trained agent it barely matters,
+  which is itself the finding.
+
 <!--/ABLATION-DISCUSSION-->
 
 ### 5.3 Greedy evaluation
 
 <!--EVAL-RESULT-->
+The agent shipped in this repository is `checkpoints/rainbow_showcase_final.pth`
+— the full-stack configuration, seed 4, trained for the complete 900-episode
+budget. Re-running that configuration from scratch reproduced its solve episode
+exactly (67), which is a useful check that seeding is doing what it claims.
+
+Evaluated over **100 fresh episodes** with no training and no exploration decay:
+
+| Protocol | Mean | Median | Std | Min | Max | Verdict |
+|---|---|---|---|---|---|---|
+| Fully greedy (ε=0) | **15.50** | 16.0 | 4.79 | 2 | 26 | PASS |
+| DQN protocol (ε=0.05) | **16.65** | 17.0 | 4.17 | 6 | 28 | PASS |
+
+Both clear the +13 threshold by a wide margin, so the solve is not an artifact
+of the training-time moving average.
+<!--/EVAL-RESULT-->
 
 ---
 
@@ -346,12 +382,12 @@ contributors, and none of the components measured here — except exploration �
 moved the needle much, which makes the missing one more interesting rather than
 less.
 
-**Investigate the degenerate greedy policy.** Fully greedy evaluation scores
-7.22 where the same weights score 12.68 at ε=0.05. Diagnosing *which* states
-produce the action loops — and whether a tie-breaking rule, an action-repeat
-penalty, or simply a longer-trained network removes them — would be more
-valuable than another value-function refinement, because it affects how every
-trained agent here is deployed.
+**Characterise when the greedy policy stops looping.** Solve-time checkpoints
+collapse under greedy evaluation (7.22 versus 12.68 at ε=0.05) while
+fully-trained ones do not (15.50 versus 16.65). Somewhere between those two
+points the action loops stop forming. Evaluating a checkpoint every 100 episodes
+would trace that curve, and would say whether "solved" checkpoints are usable
+artifacts at all or merely thresholds that were crossed.
 
 **More seeds, and proper interval estimates.** Five seeds supports medians and
 interquartile ranges but not significance claims about the near-ties (Double

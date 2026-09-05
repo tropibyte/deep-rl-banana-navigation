@@ -16,8 +16,10 @@ client into `vendor/` and modernises it**. The result runs on Python 3.11 with
 PyTorch 2.14, gRPC 1.83 and NumPy 2 — and, after the fourth fix below, runs six
 environments in parallel at full speed.
 
-The whole port is four changes. Three are documented below as patches to
-vendored code; the fourth is a lesson about how the Unity player behaves.
+The port itself is four changes (§1–§4), plus one small capability added to the
+launcher (§5). Two of those are patches to vendored code; the rest are lessons
+about how the Unity player behaves. §6 covers recording, which turned out to
+have sharper edges than any of them.
 
 ---
 
@@ -167,6 +169,60 @@ log file. Scaled to the full study on an 8-core machine:
 
 ---
 
+## 5. Passing arguments through to the Unity player
+
+Not a bug, but a small capability the v0.4 launcher lacks. `unityagents` builds
+its `subprocess.Popen` argument list inline, with no way to add player
+arguments. The Unity standalone player persists its window resolution between
+runs, so without `-screen-width` / `-screen-height` there is no way to control
+the size of a recorded window short of editing the registry.
+
+**Fix** — `environment.py` appends anything in the `UNITY_EXTRA_ARGS`
+environment variable to the launch command. Empty by default, so training is
+unaffected:
+
+```bash
+UNITY_EXTRA_ARGS="-screen-width 1280 -screen-height 720" banana-train record ...
+```
+
+---
+
+## 6. Recording the agent is a privacy problem, not a graphics problem
+
+The vector-observation build returns no visual observations, so filming it means
+running with graphics and screen-capturing the window. Three separate traps, in
+the order they bit:
+
+**Notification toasts.** Screen capture records whatever is *on screen* inside a
+rectangle, including always-on-top windows. Windows anchors notification toasts
+to the right edge of the screen, so a recording made on a normal desktop
+captures them — along with whatever personal content they are displaying. The
+first usable capture here contained three Chrome notifications with real names
+and URLs in them. The capture region is now clipped clear of that strip.
+
+**A stale client rectangle.** `GetClientRect` is not trustworthy immediately
+after launch: the player resizes itself asynchronously, and a rectangle measured
+mid-transition can be far larger than the window ends up occupying. The capture
+then extends past the window and records the desktop behind it — in this case an
+editor full of unrelated text. The fix is to poll until the client size stops
+changing, and to clamp it against `GetWindowRect`, which can never be smaller
+than the client area it contains.
+
+**`PrintWindow` does not rescue you.** The obvious robust answer is to ask the
+window to render itself into an offscreen DC, which is immune to occlusion.
+`PW_RENDERFULLCONTENT` does return the Unity window's frame and title bar — and
+a completely black client area, because the game surface is rendered by D3D.
+Worth knowing before spending time on it.
+
+**Do not maximise the window to dodge the problem.** `ShowWindow(SW_MAXIMIZE)`
+on the player provokes a device reset that blocks indefinitely.
+
+The wider lesson: anything that screen-captures a developer machine and then
+publishes the result needs the frames inspected before they are committed, not
+after.
+
+---
+
 ## What is *not* patched
 
 * **The time scale is baked into the Unity build.** v0.4's Python side never
@@ -190,4 +246,4 @@ copy, diff it against `python/` in
 diff -ru path/to/Value-based-methods/python/unityagents vendor/unityagents
 ```
 
-You should see exactly the changes in §1 and §2.
+You should see exactly the changes in §1, §2 and §5.

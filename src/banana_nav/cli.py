@@ -169,7 +169,9 @@ def cmd_record(args) -> int:
     from .record import record_gif
     out = record_gif(checkpoint=args.checkpoint, out_path=args.out,
                      episodes=args.episodes, fps=args.fps,
-                     env_path=args.env_path, max_frames=args.max_frames)
+                     env_path=args.env_path, max_frames=args.max_frames,
+                     scale=args.scale, every=args.every,
+                     crop_top=args.crop_top)
     print("wrote", out)
     return 0
 
@@ -232,6 +234,12 @@ def main(argv=None) -> int:
     r.add_argument("--episodes", type=int, default=1)
     r.add_argument("--fps", type=int, default=30)
     r.add_argument("--max-frames", type=int, default=600)
+    r.add_argument("--scale", type=float, default=0.5,
+                   help="resize factor for captured frames (GIFs get large fast)")
+    r.add_argument("--every", type=int, default=2,
+                   help="capture every Nth environment step")
+    r.add_argument("--crop-top", type=float, default=0.0,
+                   help="crop this fraction off the top of each frame (empty ceiling)")
     r.add_argument("--env-path", default=None)
     r.set_defaults(func=cmd_record)
 

@@ -186,13 +186,20 @@ class UnityEnvironment(object):
             logger.debug("This is the launch string {}".format(launch_string))
             # Launch Unity environment
             if not docker_training:
+                # PATCH (2026): allow extra arguments through to the Unity
+                # player via UNITY_EXTRA_ARGS. The standalone player persists
+                # its window resolution between runs, so without a way to pass
+                # "-screen-width/-screen-height" there is no non-registry way
+                # to control the size of a recorded window. Empty by default,
+                # so normal training is unaffected.
+                extra = os.environ.get("UNITY_EXTRA_ARGS", "").split()
                 if no_graphics:
                     self.proc1 = subprocess.Popen(
-                        [launch_string,'-nographics', '-batchmode',
-                         '--port', str(self.port)])
+                        [launch_string, '-nographics', '-batchmode',
+                         '--port', str(self.port)] + extra)
                 else:
                     self.proc1 = subprocess.Popen(
-                        [launch_string, '--port', str(self.port)])
+                        [launch_string, '--port', str(self.port)] + extra)
             else:
                 """
                 Comments for future maintenance:
