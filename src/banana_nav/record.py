@@ -16,6 +16,12 @@ import numpy as np
 
 _IS_WINDOWS = sys.platform.startswith("win")
 
+# Width of the screen-right strip reserved for notification toasts, which
+# are always-on-top and would otherwise be captured. Generous on purpose:
+# a Windows 11 toast is ~360px, and losing a slice of the frame is a far
+# better outcome than publishing someone's notifications.
+TOAST_ZONE_PX = 480
+
 
 def _find_unity_window(timeout: float = 25.0):
     """Return (hwnd, (l, t, r, b)) for the Unity client area, or None."""
@@ -46,13 +52,35 @@ def _find_unity_window(timeout: float = 25.0):
         EnumWindows(EnumWindowsProc(cb), 0)
         if found:
             hwnd = found[0]
+            # Screen capture records whatever is on screen, including anything
+            # drawn OVER the Unity window -- notification toasts in particular,
+            # which can carry personal content into a published GIF. Pin the
+            # window topmost and park it at the top-left, away from the
+            # bottom/right edges where Windows renders toasts.
+            # SWP_NOSIZE matters: the Unity player owns its resolution and
+            # re-centres itself if you try to resize it, undoing the move. Only
+            # the position is changed here.
+            HWND_TOPMOST, SWP_NOSIZE, SWP_SHOWWINDOW = -1, 0x0001, 0x0040
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                SWP_NOSIZE | SWP_SHOWWINDOW)
             user32.SetForegroundWindow(hwnd)
-            time.sleep(0.4)
+            time.sleep(0.8)
             rect = wintypes.RECT()
             user32.GetClientRect(hwnd, ctypes.byref(rect))
             pt = wintypes.POINT(0, 0)
             user32.ClientToScreen(hwnd, ctypes.byref(pt))
-            box = (pt.x, pt.y, pt.x + rect.right, pt.y + rect.bottom)
+            right, bottom = pt.x + rect.right, pt.y + rect.bottom
+
+            # Windows anchors notification toasts to the RIGHT EDGE OF THE
+            # SCREEN and draws them above every other window, so anything
+            # occupying that strip lands in the capture -- including whatever
+            # personal content the toast happens to be showing. Repositioning
+            # the window does not help (the Unity player re-centres itself), so
+            # the capture is clipped to stay clear of the toast zone instead.
+            screen_w = user32.GetSystemMetrics(0)
+            right = min(right, screen_w - TOAST_ZONE_PX)
+
+            box = (pt.x, pt.y, right, bottom)
             if box[2] > box[0] and box[3] > box[1]:
                 return hwnd, box
         time.sleep(0.5)

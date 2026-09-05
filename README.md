@@ -145,8 +145,16 @@ banana-train plot --results results/ablation --out assets
 ### Record a GIF
 
 ```bash
-banana-train record --checkpoint checkpoints/rainbow_seed0.pth --out assets/trained_agent.gif
+banana-train record --checkpoint checkpoints/rainbow_showcase_final.pth --out assets/trained_agent.gif
 ```
+
+The vector-observation build returns no visual observations, so there are no
+frames inside the environment to save — the only way to film it is to run with
+graphics and screen-capture the Unity window. That needs an **unlocked, active
+desktop session** (a locked session captures solid black, which the recorder
+detects and refuses). The capture is also clipped clear of the screen-right
+strip where Windows draws notification toasts, since those are always-on-top
+and would otherwise end up in the recording.
 
 ### Notebook
 
