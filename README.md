@@ -1,5 +1,9 @@
 # Deep RL Banana Navigation
 
+[![tests](https://github.com/tropibyte/deep-rl-banana-navigation/actions/workflows/tests.yml/badge.svg)](https://github.com/tropibyte/deep-rl-banana-navigation/actions/workflows/tests.yml)
+[![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 Value-based deep reinforcement learning agents that learn to collect bananas in
 a Unity ML-Agents environment — from a vanilla DQN baseline up to a Rainbow-style
 agent combining Double DQN, dueling heads, prioritized replay, n-step returns and
