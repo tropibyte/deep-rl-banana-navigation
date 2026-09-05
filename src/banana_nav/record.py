@@ -103,6 +103,18 @@ def record_gif(checkpoint: str, out_path: str, episodes: int = 1, fps: int = 30,
 
     if not frames:
         raise RuntimeError("No frames captured.")
+
+    # A locked or screen-blanked Windows session makes ImageGrab return solid
+    # black, which would silently produce a black GIF. Detect that and refuse
+    # rather than shipping a broken asset.
+    stack = np.stack(frames[:: max(1, len(frames) // 12)])
+    if float(stack.std()) < 1.5:
+        raise RuntimeError(
+            "Captured frames are essentially uniform (std={:.2f}) - the Unity "
+            "window was probably not visible. Screen capture needs an unlocked, "
+            "active desktop session; re-run this command while logged in."
+            .format(float(stack.std())))
+
     imageio.mimsave(out, frames, fps=fps, loop=0)
     print(f"scores: {scores}  mean {np.mean(scores):.1f}  frames {len(frames)}")
     return out
