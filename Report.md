@@ -260,6 +260,35 @@ call this anything but suggestive, but it hints at a seed-specific interaction
 with the noisy layers' initialisation rather than ordinary run-to-run noise.
 Confirming or dismissing it would need considerably more seeds.
 
+Medians alone also flatter the near-ties. A more honest summary for five seeds
+is the **probability of superiority** — across all 25 baseline-vs-variant seed
+pairings, how often did the variant actually solve faster? Fifty percent is a
+coin flip:
+
+| Variant | Median | vs baseline | P(faster than baseline) |
+|---|---|---|---|
+| + Double DQN | 392 | −18 ep | 56% |
+| + Dueling head | 409 | −1 ep | **36%** |
+| + Prioritized replay | 555 | +145 ep | **0%** |
+| + 3-step returns | 407 | −3 ep | 58% |
+| + NoisyNet | 189 | −221 ep | **100%** |
+| All combined | 134 | −276 ep | 80% |
+
+This reframes three rows. Double DQN and 3-step returns sit at 56% and 58% —
+statistically indistinguishable from the baseline, and their "improved" medians
+should not be read as improvements. The dueling head is worse still: its median
+is nominally 1 episode better, yet the baseline solves faster on **64%** of seed
+pairings. A median can move the wrong way relative to the underlying
+distribution, and here it does.
+
+The two real effects are unambiguous by the same measure. Prioritized replay
+lost every single one of its 25 pairings; NoisyNet won every single one.
+
+It is also worth noting that Rainbow scores *lower* than NoisyNet alone (80%
+versus 100%) despite a far better median, because its seed-0 outlier loses to
+every baseline run. Rainbow is **faster**; NoisyNet alone is **more reliable**.
+Those are different claims, and only the multi-seed design separates them.
+
 #### The greedy policy is degenerate
 
 An unexpected result surfaced during evaluation. Taking a checkpoint and running
@@ -326,8 +355,8 @@ trained agent here is deployed.
 
 **More seeds, and proper interval estimates.** Five seeds supports medians and
 interquartile ranges but not significance claims about the near-ties (Double
-DQN's 392 against the baseline's 410 is well inside seed noise, and should not
-be read as an improvement). Rliable-style bootstrapped confidence intervals over
+DQN wins 56% of seed pairings against the baseline, which is a coin flip, and
+its better median should not be read as an improvement). Rliable-style bootstrapped confidence intervals over
 10–20 seeds would let those calls be made rather than merely displayed. The
 apparent seed-0 interaction with NoisyNet also needs more seeds to confirm or
 dismiss.
